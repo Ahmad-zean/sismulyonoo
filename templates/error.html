@@ -1,0 +1,60 @@
+{% extends "layout.html" %}
+
+{% block title %}{{ title|default("Terjadi Kesalahan") }} - Ruang Tenang{% endblock %}
+
+{% block content %}
+<div class="page-shell">
+  <aside class="sidebar">
+    <div class="brand-wrap">
+      <img
+        class="brand-logo"
+        src="{{ url_for('static', path='logo-ruang-tenang.jpeg') }}"
+        alt="Logo Ruang Tenang"
+      />
+      <div>
+        <p class="eyebrow">Project</p>
+        <h2>Ruang Tenang</h2>
+      </div>
+    </div>
+
+    <nav class="sidebar-menu">
+      <a class="nav-item" href="/">Chat</a>
+      <a class="nav-item" href="/help">Bantuan Darurat</a>
+    </nav>
+  </aside>
+
+  <main class="chat-panel">
+    <header class="chat-header">
+      <div class="header-meta">
+        <div>
+          <p class="eyebrow">Terjadi kendala</p>
+          <h1>Halaman tidak tersedia</h1>
+        </div>
+      </div>
+      <div class="header-actions">
+        <a class="header-link" href="/">Kembali ke Chat</a>
+      </div>
+    </header>
+
+    <section class="help-content">
+      <article class="emergency-card">
+        {% if status_code %}
+        <p class="eyebrow">Kode error {{ status_code }}</p>
+        {% endif %}
+        <h2>Maaf, permintaan Anda belum dapat diproses.</h2>
+        <p>
+          {% if status_code == 404 %}
+          Halaman yang Anda cari tidak ditemukan. Periksa kembali alamat halaman atau kembali ke chat.
+          {% else %}
+          Silakan coba lagi. Jika kendala berlanjut, kembali ke chat atau buka halaman bantuan.
+          {% endif %}
+        </p>
+        {% if detail and status_code != 404 %}
+        <p>{{ detail }}</p>
+        {% endif %}
+        <a class="header-link" href="/help">Buka Bantuan</a>
+      </article>
+    </section>
+  </main>
+</div>
+{% endblock %}

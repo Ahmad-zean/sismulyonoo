@@ -1,0 +1,10 @@
+fastapi
+groq
+jinja2
+email-validator
+PyJWT
+pydantic-settings
+python-multipart
+python-dotenv
+sqlalchemy
+uvicorn

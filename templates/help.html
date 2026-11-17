@@ -1,0 +1,68 @@
+{% extends "layout.html" %}
+
+{% block title %}Bantuan Darurat - Ruang Tenang{% endblock %}
+
+{% block content %}
+<div class="page-shell">
+  <aside class="sidebar">
+    <div class="brand-wrap">
+      <img
+        class="brand-logo"
+        src="{{ url_for('static', path='logo-ruang-tenang.jpeg') }}"
+        alt="Logo Ruang Tenang"
+      />
+      <div class="brand-copy">
+        <p class="eyebrow">RUANG UNTUK CERITA</p>
+        <h2>Ruang Tenang</h2>
+        <p class="brand-tagline">Tempat aman untuk bercerita.</p>
+      </div>
+    </div>
+    <nav class="sidebar-menu">
+      <a class="nav-item" href="/">Chat</a>
+      <a class="nav-item active" href="/help" aria-current="page">Bantuan Darurat</a>
+    </nav>
+  </aside>
+
+  <main class="chat-panel">
+    <header class="chat-header">
+      <div class="header-meta">
+        <div>
+          <p class="eyebrow">Informasi penting</p>
+          <h1>Bantuan Darurat</h1>
+        </div>
+      </div>
+      <div class="header-actions">
+        <a class="header-link" href="/">Kembali ke Chat</a>
+      </div>
+    </header>
+
+    <section class="help-content">
+      <p class="help-intro">
+        Jika Anda atau orang lain mengalami kondisi medis darurat, hubungi layanan berikut.
+        Jika kondisi mengancam nyawa, segera cari pertolongan.
+      </p>
+
+      <div class="emergency-list">
+        <article class="emergency-card">
+          <p class="eyebrow">Ambulans dan kegawatdaruratan medis</p>
+          <h2>PSC 119</h2>
+          <a class="emergency-number" href="tel:119">119</a>
+          <p>Layanan cepat tanggap darurat kesehatan.</p>
+        </article>
+
+        <article class="emergency-card">
+          <p class="eyebrow">Nomor darurat terpadu</p>
+          <h2>112</h2>
+          <a class="emergency-number" href="tel:112">112</a>
+          <p>Ketersediaan layanan 112 bergantung pada wilayah. Jika tidak tersambung untuk keadaan medis, coba hubungi 119.</p>
+        </article>
+      </div>
+
+      <p class="help-note">
+        Nomor langsung IGD rumah sakit berbeda menurut kota dan rumah sakit. Untuk bantuan medis darurat,
+        gunakan 119 atau hubungi IGD terdekat.
+      </p>
+    </section>
+  </main>
+</div>
+{% endblock %}
