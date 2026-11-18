@@ -1,4 +1,6 @@
 import os
+from pathlib import Path
+from urllib.parse import quote
 
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException, Request, status
@@ -38,6 +40,8 @@ app = FastAPI()
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
+AUDIO_DIRECTORY = Path("static/audio")
+SUPPORTED_AUDIO_FORMATS = {".mp3", ".m4a", ".ogg", ".wav"}
 Base.metadata.create_all(bind=engine)
 migrate_conversation_ownership()
 app.include_router(user_router)
@@ -235,6 +239,33 @@ async def home(request: Request):
         path="/",
     )
     return response
+
+
+@app.get("/relaxing-sound")
+def relaxing_sound_page(request: Request):
+    return templates.TemplateResponse(
+        request,
+        "relaxing_sound.html",
+        {"request": request},
+    )
+
+
+@app.get("/api/relaxing-sounds")
+def list_relaxing_sounds():
+    if not AUDIO_DIRECTORY.is_dir():
+        return []
+
+    tracks = []
+    for audio_file in sorted(AUDIO_DIRECTORY.iterdir(), key=lambda item: item.name.casefold()):
+        if not audio_file.is_file() or audio_file.suffix.lower() not in SUPPORTED_AUDIO_FORMATS:
+            continue
+        tracks.append(
+            {
+                "title": audio_file.stem.replace("_", " ").replace("-", " ").strip().title(),
+                "src": f"/static/audio/{quote(audio_file.name)}",
+            }
+        )
+    return tracks
 
 
 @app.get("/reset-password/{token}")

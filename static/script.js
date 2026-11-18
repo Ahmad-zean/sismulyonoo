@@ -547,3 +547,160 @@ if (resetPasswordForm) {
     }
   });
 }
+
+const trackList = document.getElementById('trackList');
+if (trackList) {
+  const audio = new Audio();
+  const trackMessage = document.getElementById('trackMessage');
+  const trackCount = document.getElementById('trackCount');
+  const playButton = document.getElementById('playerPlay');
+  const playIcon = document.getElementById('playerPlayIcon');
+  const nowPlayingTitle = document.getElementById('nowPlayingTitle');
+  const progressBar = document.getElementById('progressBar');
+  const currentTime = document.getElementById('currentTime');
+  const duration = document.getElementById('duration');
+  const volumeControl = document.getElementById('playerVolume');
+  let tracks = [];
+  let currentTrackIndex = -1;
+
+  audio.preload = 'metadata';
+  audio.volume = Number(volumeControl.value) / 100;
+
+  function formatTime(seconds) {
+    if (!Number.isFinite(seconds) || seconds < 0) return '0:00';
+    const minutes = Math.floor(seconds / 60);
+    const remainder = Math.floor(seconds % 60).toString().padStart(2, '0');
+    return `${minutes}:${remainder}`;
+  }
+
+  function updatePlaybackState() {
+    const isPlaying = !audio.paused;
+    playButton.disabled = currentTrackIndex < 0;
+    playButton.setAttribute('aria-label', isPlaying ? 'Jeda audio' : 'Putar audio');
+    playIcon.textContent = isPlaying ? 'Ⅱ' : '▶';
+    trackList.querySelectorAll('[data-track-index]').forEach((row) => {
+      const selected = Number(row.dataset.trackIndex) === currentTrackIndex;
+      row.classList.toggle('selected', selected);
+      const button = row.querySelector('.track-play-button');
+      button.textContent = selected && isPlaying ? 'Ⅱ' : '▶';
+      button.setAttribute('aria-label', selected && isPlaying ? 'Jeda audio' : `Putar ${tracks[Number(row.dataset.trackIndex)].title}`);
+    });
+  }
+
+  function renderTracks() {
+    trackList.replaceChildren();
+    trackCount.textContent = `${tracks.length} audio`;
+    if (tracks.length === 0) {
+      trackMessage.textContent = 'Belum ada audio. Unggah file MP3, M4A, OGG, atau WAV ke folder static/audio.';
+      trackMessage.hidden = false;
+      return;
+    }
+
+    trackMessage.hidden = true;
+    tracks.forEach((track, index) => {
+      const row = document.createElement('div');
+      row.className = 'track-row';
+      row.dataset.trackIndex = String(index);
+
+      const playTrackButton = document.createElement('button');
+      playTrackButton.className = 'track-play-button';
+      playTrackButton.type = 'button';
+      playTrackButton.textContent = '▶';
+      playTrackButton.setAttribute('aria-label', `Putar ${track.title}`);
+      playTrackButton.addEventListener('click', () => selectTrack(index));
+
+      const title = document.createElement('span');
+      title.className = 'track-title';
+      title.textContent = track.title;
+
+      const trackType = document.createElement('span');
+      trackType.className = 'track-type';
+      trackType.textContent = 'Audio';
+
+      row.append(playTrackButton, title, trackType);
+      trackList.appendChild(row);
+    });
+    updatePlaybackState();
+  }
+
+  async function selectTrack(index) {
+    if (index === currentTrackIndex) {
+      if (audio.paused) {
+        try {
+          await audio.play();
+        } catch (error) {
+          console.error('Audio gagal diputar:', error);
+          trackMessage.textContent = 'Audio tidak dapat diputar. Periksa file audio dan coba lagi.';
+          trackMessage.hidden = false;
+        }
+      } else {
+        audio.pause();
+      }
+      return;
+    }
+
+    currentTrackIndex = index;
+    const track = tracks[index];
+    audio.src = track.src;
+    nowPlayingTitle.textContent = track.title;
+    currentTime.textContent = '0:00';
+    duration.textContent = '0:00';
+    progressBar.value = '0';
+    progressBar.disabled = false;
+    updatePlaybackState();
+    try {
+      await audio.play();
+    } catch (error) {
+      console.error('Audio gagal diputar:', error);
+      trackMessage.textContent = 'Audio tidak dapat diputar. Periksa file audio dan coba lagi.';
+      trackMessage.hidden = false;
+    }
+  }
+
+  document.getElementById('playerPlay').addEventListener('click', () => {
+    if (currentTrackIndex >= 0) selectTrack(currentTrackIndex);
+  });
+
+  audio.addEventListener('play', updatePlaybackState);
+  audio.addEventListener('pause', updatePlaybackState);
+  audio.addEventListener('ended', () => {
+    updatePlaybackState();
+  });
+  audio.addEventListener('loadedmetadata', () => {
+    duration.textContent = formatTime(audio.duration);
+  });
+  audio.addEventListener('timeupdate', () => {
+    currentTime.textContent = formatTime(audio.currentTime);
+    if (Number.isFinite(audio.duration) && audio.duration > 0) {
+      progressBar.value = String(Math.round((audio.currentTime / audio.duration) * 1000));
+    }
+  });
+  audio.addEventListener('error', () => {
+    trackMessage.textContent = 'File audio gagal dimuat. Periksa file di folder static/audio.';
+    trackMessage.hidden = false;
+  });
+  progressBar.addEventListener('input', () => {
+    if (Number.isFinite(audio.duration) && audio.duration > 0) {
+      audio.currentTime = (Number(progressBar.value) / 1000) * audio.duration;
+    }
+  });
+  volumeControl.addEventListener('input', () => {
+    audio.volume = Number(volumeControl.value) / 100;
+  });
+
+  fetch('/api/relaxing-sounds')
+    .then((response) => {
+      if (!response.ok) throw new Error('Daftar audio gagal dimuat.');
+      return response.json();
+    })
+    .then((data) => {
+      if (!Array.isArray(data)) throw new Error('Format daftar audio tidak valid.');
+      tracks = data;
+      renderTracks();
+    })
+    .catch((error) => {
+      console.error('Daftar audio gagal dimuat:', error);
+      trackCount.textContent = 'Daftar audio tidak tersedia';
+      trackMessage.textContent = 'Daftar audio gagal dimuat. Silakan muat ulang halaman.';
+    });
+}
