@@ -1,3 +1,10 @@
+function getCsrfToken() {
+  const cookie = document.cookie.split('; ').find((item) =>
+    item.startsWith('csrf_token=') || item.startsWith('__Host-csrf_token='),
+  );
+  return cookie ? decodeURIComponent(cookie.substring(cookie.indexOf('=') + 1)) : '';
+}
+
 const chatForm = document.getElementById('chatForm');
 const chatWindow = document.getElementById('chatWindow');
 const messageInput = document.getElementById('messageInput');
@@ -6,6 +13,8 @@ const newChatBtn = document.getElementById('newChatBtn');
 
 if (chatForm && chatWindow && messageInput && conversationList && newChatBtn) {
   let currentConversationId = null;
+  let guestHistory = [];
+  let isAuthenticated = false;
 
   function createMessage(role, text) {
     const row = document.createElement('div');
@@ -30,6 +39,7 @@ if (chatForm && chatWindow && messageInput && conversationList && newChatBtn) {
 
   function startNewChat() {
     currentConversationId = null;
+    guestHistory = [];
     chatWindow.replaceChildren();
     createMessage('bot', 'Apa ada yang bisa saya bantu?');
     renderConversationList();
@@ -49,23 +59,112 @@ if (chatForm && chatWindow && messageInput && conversationList && newChatBtn) {
     try {
       const conversations = await loadConversations();
       if (conversations.length === 0) {
-        conversationList.textContent = 'Belum ada percakapan.';
+        conversationList.textContent = isAuthenticated
+          ? 'Belum ada percakapan.'
+          : 'Masuk untuk menyimpan riwayat.';
         return;
       }
 
       for (const conversation of conversations) {
+        const row = document.createElement('div');
+        row.className = 'conversation-row';
+
         const button = document.createElement('button');
         button.type = 'button';
         button.className = 'conversation-item';
         button.textContent = conversation.title;
         button.classList.toggle('active', conversation.id === currentConversationId);
         button.addEventListener('click', () => openConversation(conversation.id));
-        conversationList.appendChild(button);
+        row.appendChild(button);
+
+        const actions = document.createElement('div');
+        actions.className = 'conversation-actions';
+
+        const renameButton = document.createElement('button');
+        renameButton.type = 'button';
+        renameButton.className = 'conversation-action';
+        renameButton.textContent = 'Ubah';
+        renameButton.setAttribute('aria-label', `Ubah nama ${conversation.title}`);
+        renameButton.addEventListener('click', () => renameConversation(conversation));
+        actions.appendChild(renameButton);
+
+        const deleteButton = document.createElement('button');
+        deleteButton.type = 'button';
+        deleteButton.className = 'conversation-action delete';
+        deleteButton.textContent = 'Hapus';
+        deleteButton.setAttribute('aria-label', `Hapus ${conversation.title}`);
+        deleteButton.addEventListener('click', () => deleteConversation(conversation));
+        actions.appendChild(deleteButton);
+
+        row.appendChild(actions);
+        conversationList.appendChild(row);
       }
     }
     catch (error) {
       console.error('Gagal memuat riwayat:', error);
       conversationList.textContent = 'Riwayat tidak dapat dimuat.';
+    }
+  }
+
+  async function renameConversation(conversation) {
+    const enteredTitle = window.prompt('Nama percakapan:', conversation.title);
+    if (enteredTitle === null) return;
+
+    const title = enteredTitle.trim();
+    if (!title) {
+      window.alert('Nama percakapan tidak boleh kosong.');
+      return;
+    }
+
+    try {
+      const response = await fetch(
+        `/api/conversations/${encodeURIComponent(conversation.id)}`,
+        {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRF-Token': getCsrfToken(),
+          },
+          body: JSON.stringify({ title }),
+        },
+      );
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.detail || 'Nama percakapan gagal diubah.');
+      }
+      await renderConversationList();
+    } catch (error) {
+      console.error('Gagal mengubah nama percakapan:', error);
+      window.alert(error.message || 'Nama percakapan gagal diubah.');
+    }
+  }
+
+  async function deleteConversation(conversation) {
+    if (!window.confirm(`Hapus percakapan "${conversation.title}"?`)) return;
+
+    try {
+      const response = await fetch(
+        `/api/conversations/${encodeURIComponent(conversation.id)}`,
+        {
+          method: 'DELETE',
+          headers: { 'X-CSRF-Token': getCsrfToken() },
+        },
+      );
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.detail || 'Percakapan gagal dihapus.');
+      }
+
+      if (currentConversationId === conversation.id) {
+        currentConversationId = null;
+        guestHistory = [];
+        chatWindow.replaceChildren();
+        createMessage('bot', 'Apa ada yang bisa saya bantu?');
+      }
+      await renderConversationList();
+    } catch (error) {
+      console.error('Gagal menghapus percakapan:', error);
+      window.alert(error.message || 'Percakapan gagal dihapus.');
     }
   }
 
@@ -94,10 +193,12 @@ if (chatForm && chatWindow && messageInput && conversationList && newChatBtn) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'X-CSRF-Token': getCsrfToken(),
       },
       body: JSON.stringify({
         message,
         conversation_id: currentConversationId,
+        history: currentConversationId ? [] : guestHistory.slice(-20),
       }),
     });
     const data = await response.json();
@@ -126,6 +227,13 @@ if (chatForm && chatWindow && messageInput && conversationList && newChatBtn) {
       const data = await sendMessageToBackend(text);
       currentConversationId = data.conversation_id;
       createMessage('bot', data.response || 'Maaf, tidak ada jawaban dari server.');
+      if (!currentConversationId) {
+        guestHistory.push(
+          { role: 'user', content: text },
+          { role: 'assistant', content: data.response || '' },
+        );
+        guestHistory = guestHistory.slice(-20);
+      }
       await renderConversationList();
     } catch (error) {
       console.error('Pesan gagal dikirim:', error);
@@ -134,6 +242,11 @@ if (chatForm && chatWindow && messageInput && conversationList && newChatBtn) {
       sendBtn.disabled = false;
       sendBtn.textContent = 'Kirim';
     }
+  });
+
+  window.addEventListener('account-state-changed', (event) => {
+    isAuthenticated = event.detail.authenticated;
+    startNewChat();
   });
 
   startNewChat();
@@ -156,13 +269,6 @@ if (authDialog && openAuthBtn && profileDialog && accountMenu) {
   const profileMessage = document.getElementById('profileMessage');
   const passwordMessage = document.getElementById('passwordMessage');
 
-  function getCsrfToken() {
-    const cookie = document.cookie.split('; ').find((item) =>
-      item.startsWith('csrf_token=') || item.startsWith('__Host-csrf_token='),
-    );
-    return cookie ? decodeURIComponent(cookie.substring(cookie.indexOf('=') + 1)) : '';
-  }
-
   function setMessage(element, message, kind = '') {
     element.replaceChildren();
     element.className = `form-message ${kind}`.trim();
@@ -182,6 +288,15 @@ if (authDialog && openAuthBtn && profileDialog && accountMenu) {
   function setAccountName(username) {
     accountName.textContent = username;
     accountAvatar.textContent = username.trim().charAt(0).toUpperCase() || 'R';
+  }
+
+  let lastAuthenticatedState = null;
+  function publishAccountState(authenticated) {
+    if (lastAuthenticatedState === authenticated) return;
+    lastAuthenticatedState = authenticated;
+    window.dispatchEvent(new CustomEvent('account-state-changed', {
+      detail: { authenticated },
+    }));
   }
 
   function showAuthTab(tab) {
@@ -214,10 +329,14 @@ if (authDialog && openAuthBtn && profileDialog && accountMenu) {
 
   async function loadAccount() {
     const response = await fetch('/api/Users/me');
-    if (!response.ok) {
+    if (response.status === 401) {
       accountMenu.hidden = true;
       openAuthBtn.hidden = false;
+      publishAccountState(false);
       return null;
+    }
+    if (!response.ok) {
+      throw new Error('Informasi akun gagal dimuat.');
     }
 
     const user = await response.json();
@@ -226,6 +345,7 @@ if (authDialog && openAuthBtn && profileDialog && accountMenu) {
     profileForm.elements.email.value = user.email;
     accountMenu.hidden = false;
     openAuthBtn.hidden = true;
+    publishAccountState(true);
     return user;
   }
 

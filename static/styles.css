@@ -129,8 +129,16 @@ body {
   padding-right: 3px;
 }
 
+.conversation-row {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 4px;
+}
+
 .conversation-item {
-  width: 100%;
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
   border: 1px solid transparent;
   border-radius: 10px;
@@ -142,6 +150,35 @@ body {
   text-overflow: ellipsis;
   white-space: nowrap;
   cursor: pointer;
+}
+
+.conversation-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 2px;
+}
+
+.conversation-action {
+  border: 1px solid transparent;
+  border-radius: 8px;
+  padding: 7px 6px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.7rem;
+  cursor: pointer;
+}
+
+.conversation-action:hover {
+  border-color: rgba(118, 221, 207, 0.22);
+  background: rgba(118, 221, 207, 0.08);
+  color: var(--text);
+}
+
+.conversation-action.delete:hover {
+  border-color: rgba(255, 145, 145, 0.28);
+  background: rgba(255, 145, 145, 0.12);
+  color: #ffb0b0;
 }
 
 .conversation-item:hover,

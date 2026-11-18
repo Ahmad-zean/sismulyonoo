@@ -63,6 +63,11 @@ class Conversation(Base):
         primary_key=True,
         default=lambda: str(uuid4()),
     )
+    user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id"),
+        nullable=True,
+        index=True,
+    )
     title: Mapped[str] = mapped_column(
         String(120),
         nullable=False,

@@ -1,7 +1,7 @@
 import os
 
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -10,12 +10,12 @@ from sqlalchemy.orm import Session
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from config import settings
-from database import Base, engine, get_db
-from models import ChatMessage, Conversation, utc_now
-from Routers.User import router as user_router
-from security import CSRF_COOKIE_NAME, new_csrf_token
-from schema import Message
-from services import PASSWORD_RESET, verify_email_action_token
+from database import Base, engine, get_db, migrate_conversation_ownership
+from models import ChatMessage, Conversation, User, utc_now
+from Routers.User import get_current_user, router as user_router
+from security import CSRF_COOKIE_NAME, new_csrf_token, require_header_csrf
+from schema import ConversationRename, Message
+from services import PASSWORD_RESET, get_request_user, verify_email_action_token
 
 load_dotenv()
 
@@ -39,7 +39,15 @@ app = FastAPI()
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 Base.metadata.create_all(bind=engine)
+migrate_conversation_ownership()
 app.include_router(user_router)
+
+
+def get_optional_current_user(
+    request: Request,
+    db: Session = Depends(get_db),
+) -> User | None:
+    return get_request_user(request, db)
 
 
 def get_valid_api_key():
@@ -247,12 +255,32 @@ def reset_password_page(
 
 
 @app.post("/chat")
-async def chat(payload: Message, db: Session = Depends(get_db)):
+async def chat(
+    payload: Message,
+    db: Session = Depends(get_db),
+    user: User | None = Depends(get_optional_current_user),
+    _: None = Depends(require_header_csrf),
+):
     try:
         clean_message = payload.message.strip()
+        if user is None:
+            if payload.conversation_id:
+                raise HTTPException(status_code=401, detail="Silakan masuk untuk membuka riwayat.")
+            history = [
+                {"role": turn.role, "content": turn.content}
+                for turn in payload.history
+            ]
+            reply = get_bot_response(clean_message, history=history) or ""
+            return JSONResponse(content={"response": reply, "conversation_id": None})
+
         conversation = None
         if payload.conversation_id:
-            conversation = db.get(Conversation, payload.conversation_id)
+            conversation = db.scalar(
+                select(Conversation).where(
+                    Conversation.id == payload.conversation_id,
+                    Conversation.user_id == user.id,
+                )
+            )
             if conversation is None:
                 raise HTTPException(status_code=404, detail="Percakapan tidak ditemukan.")
 
@@ -262,7 +290,10 @@ async def chat(payload: Message, db: Session = Depends(get_db)):
         ] if conversation is not None else []
         reply = get_bot_response(clean_message, history=history) or ""
         if conversation is None:
-            conversation = Conversation(title=clean_message[:120] or "Percakapan baru")
+            conversation = Conversation(
+                user_id=user.id,
+                title=clean_message[:120] or "Percakapan baru",
+            )
             db.add(conversation)
             db.flush()
 
@@ -295,12 +326,17 @@ async def chat(payload: Message, db: Session = Depends(get_db)):
 
 
 @app.get("/api/conversations")
-def list_conversations(db: Session = Depends(get_db)):
+def list_conversations(
+    db: Session = Depends(get_db),
+    user: User | None = Depends(get_optional_current_user),
+):
+    if user is None:
+        return []
+
     conversations = db.scalars(
-        select(Conversation).order_by(
-            Conversation.updated_at.desc(),
-            Conversation.created_at.desc(),
-        )
+        select(Conversation)
+        .where(Conversation.user_id == user.id)
+        .order_by(Conversation.updated_at.desc(), Conversation.created_at.desc())
     ).all()
     return [
         {
@@ -312,11 +348,29 @@ def list_conversations(db: Session = Depends(get_db)):
     ]
 
 
-@app.get("/api/conversations/{conversation_id}")
-def get_conversation(conversation_id: str, db: Session = Depends(get_db)):
-    conversation = db.get(Conversation, conversation_id)
+def get_owned_conversation(
+    conversation_id: str,
+    user: User,
+    db: Session,
+) -> Conversation:
+    conversation = db.scalar(
+        select(Conversation).where(
+            Conversation.id == conversation_id,
+            Conversation.user_id == user.id,
+        )
+    )
     if conversation is None:
         raise HTTPException(status_code=404, detail="Percakapan tidak ditemukan.")
+    return conversation
+
+
+@app.get("/api/conversations/{conversation_id}")
+def get_conversation(
+    conversation_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    conversation = get_owned_conversation(conversation_id, user, db)
 
     return {
         "id": conversation.id,
@@ -330,6 +384,40 @@ def get_conversation(conversation_id: str, db: Session = Depends(get_db)):
             for message in conversation.messages
         ],
     }
+
+
+@app.patch("/api/conversations/{conversation_id}")
+def rename_conversation(
+    conversation_id: str,
+    payload: ConversationRename,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+    _: None = Depends(require_header_csrf),
+):
+    conversation = get_owned_conversation(conversation_id, user, db)
+    title = payload.title.strip()
+    if not title:
+        raise HTTPException(status_code=422, detail="Judul percakapan tidak boleh kosong.")
+
+    conversation.title = title
+    conversation.updated_at = utc_now()
+    db.commit()
+    return {"id": conversation.id, "title": conversation.title}
+
+
+@app.delete(
+    "/api/conversations/{conversation_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def delete_conversation(
+    conversation_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+    _: None = Depends(require_header_csrf),
+) -> None:
+    conversation = get_owned_conversation(conversation_id, user, db)
+    db.delete(conversation)
+    db.commit()
 
 
 @app.get("/help")
